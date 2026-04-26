@@ -1,8 +1,150 @@
 ---
 title: PLAN 372
-author: Your Name
+author: Jay Sakarvadia
 ---
 
 Place your analysis code in this file; you must not rename it, though you may delete these instructions. Please update the block above with the name of the assignment and with your name.When you push your code to github, it will automatically be rendered for grading. You can see whether the automatic rendering worked in the "Actions" tab of the github repository.
 
 If you use any libraries other than `tidyverse`, `lubridate`, `sf`, `ggplot2`, `here`, `terra`, `ggspatial`, `rJavaEnv`, and `r5r`, add them to the list in the DESCRIPTION file.
+
+# Setup
+
+```{r}
+library(tidyverse)
+
+trees <- read_csv("TS3_Raw_tree_data.csv", show_col_types = FALSE)
+```
+
+
+# Question 1
+
+```{r}
+trees[, c("city_name", "state")] <-
+  str_match(trees$City, "^(.*), ([[:upper:]]{2})$")[, 2:3]
+
+state_counts <- trees |>
+  count(state, name = "records") |>
+  arrange(desc(records), state)
+
+state_counts
+
+ggplot(state_counts, aes(x = reorder(state, records), y = records)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Tree records by state",
+    x = "State",
+    y = "Number of records"
+  )
+
+```
+
+The state-level counts show that California has by far the most tree records in the dataset, with 4,062 observations. After California, the counts drop sharply, with the next largest states in the output all below 1,000 records, such as Washington, Idaho, and Hawaii. This suggests the dataset is heavily concentrated in California rather than being evenly distributed across states.
+
+
+# Question 2
+
+```{r}
+ncsc <- trees |>
+  filter(state %in% c("NC", "SC"))
+
+ncsc_cities <- ncsc |>
+  distinct(city_name, state) |>
+  arrange(state, city_name)
+
+ncsc_cities
+
+```
+
+
+After filtering the dataset to North Carolina and South Carolina, only two cities remain: Charlotte, NC and Charleston, SC. This means the Carolina portion of the dataset is limited to these two urban areas. Any later comparisons for NC and SC are therefore based only on trees recorded in Charlotte and Charleston.
+
+
+# Question 3 
+
+```{r}
+ncsc$genus <- str_match(ncsc$ScientificName, "^([[:alpha:]]+)")[, 2]
+
+genus_crowns <- ncsc |>
+  group_by(genus) |>
+  summarize(
+    avg_crown_m = mean(`AvgCdia (m)`, na.rm = TRUE),
+    n_trees = n(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(avg_crown_m), genus)
+
+genus_crowns
+
+# Genus with the largest average crown diameter
+genus_crowns |> slice(1)
+
+```
+
+
+Among trees in North Carolina and South Carolina, Quercus has the largest average crown diameter at about 13.62 meters. It also has a much larger sample size than the other genera shown, with 449 trees, so this result is based on a fairly substantial number of observations. This suggests that oaks tend to have the widest crowns on average in the Carolina subset of the data.
+
+
+# Question 4
+
+```{r}
+genus_age <- ncsc |>
+  filter(Age > 0) |>
+  group_by(genus) |>
+  summarize(
+    avg_age_years = mean(Age, na.rm = TRUE),
+    avg_crown_m = mean(`AvgCdia (m)`, na.rm = TRUE),
+    n_trees = n(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(avg_age_years), genus)
+
+genus_age
+
+# Look specifically at Quercus if you want to compare it
+genus_age |> filter(genus == "Quercus")
+```
+
+
+Yes, there are noticeable differences in average age across genera. Quercus is not only the genus with the largest average crown diameter, but also the oldest on average at about 35.79 years, which suggests age likely helps explain why its crowns are so large. Still, age probably is not the only factor, since growth patterns also differ across genera.
+
+
+# Extra Credit
+
+```{r}
+recommendation_table <- genus_age |>
+  filter(n_trees >= 50) |>
+  mutate(crown_per_year = avg_crown_m / avg_age_years) |>
+  arrange(desc(crown_per_year), genus)
+
+recommendation_table
+
+# Recommended genus under this rule
+recommendation_table |> slice(1)
+```
+
+```{r}
+trees$genus <- str_match(trees$ScientificName, "^([[:alpha:]]+)")[, 2]
+trees$species <- str_match(
+  trees$ScientificName,
+  "^[[:alpha:]]+\\s+(x\\s+)?([[:alpha:].-]+)"
+)[, 3]
+
+species_counts <- trees |>
+  group_by(genus) |>
+  summarize(
+    n_species = n_distinct(species),
+    .groups = "drop"
+  ) |>
+  arrange(desc(n_species), genus)
+
+species_counts
+```
+
+
+Using the crown-per-year measure, Prunus looks like the best recommendation for producing a large crown quickly. It has the highest value in this comparison, with an average crown diameter of about 9.27 meters at an average age of 16.76 years. That suggests Prunus offers the strongest balance of relatively fast growth and substantial crown size among the more common genera in the Carolina data.
+
+
+# AI Reflection
+
+I used ChatGPT to help troubleshoot parts of the regular-expression and dplyr workflow, especially the capture groups used with str_match() and the organization of the summary tables. I also relied on the lecture file and the example answer files to keep the solution within the methods covered in class. These resources helped me debug and structure the analysis, but I still had to verify that the regex patterns matched the tree data correctly and that each final answer was supported by the actual output.
